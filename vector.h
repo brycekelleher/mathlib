@@ -620,7 +620,7 @@ inline vec4 Normalize(vec4 v)
 	return v;
 }
 
-static vec4 vec4_zero(0.0f, 0.0f, 0.0f);
+static vec4 vec4_zero(0.0f, 0.0f, 0.0f, 0.0f);
 
 #endif
 

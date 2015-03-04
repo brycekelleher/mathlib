@@ -1,21 +1,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <memory.h>
-#include "vector.h"
-
-
-typedef struct polygon_s
-{
-	int	maxvertices;
-	int	numvertices;
-	vec3	*vertices;
-
-} polygon_t;
-
-#define POLYGON_SIDE_ON		0
-#define POLYGON_SIDE_FRONT	1
-#define POLYGON_SIDE_BACK	2
-#define POLYGON_SIDE_CROSS	3
+#include "polygon.h"
 
 // memory allocation
 static void *Polygon_MemAllocHandler(int numbytes)
@@ -37,7 +23,7 @@ void Polygon_SetMemCallbacks(void *(*alloccallback)(int numbytes), void (*freeca
 	Polygon_MemFree		= freecallback;
 }
 
-int Polygon_MemSize(int maxvertices)
+static int Polygon_MemSize(int maxvertices)
 {
 	return sizeof(polygon_t) + (maxvertices * sizeof(vec3));
 }
@@ -128,7 +114,7 @@ float Polygon_TriangleArea2D(float v[3][2])
 
 float Polygon_TriangleArea2D(float v0[2], float v1[2], float v2[2])
 {
-	return 0.5f * ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
+	return 0.5f * ((v1[0] - v0[0]) * (v2[1] - v0[1]) - (v2[0] - v0[0]) * (v1[1] - v0[1]));
 }
 
 static float Polygon_TriangleProjectedArea(int axis, float v0[3], float v1[3], float v2[3])
@@ -155,9 +141,9 @@ static float Polygon_TriangleProjectedArea(int axis, float v0[3], float v1[3], f
 float Polygon_TriangleArea(float v0[3], float v1[3], float v2[3])
 {
 	// projected areas on the x, y and z axis
-	float x = ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
-	float y = ((v1[2] - v0[2]) * (v2[0] - v0[0])) - ((v2[2] - v0[2]) * (v1[0] - v0[0]));
-	float z = ((v1[1] - v0[1]) * (v2[2] - v0[2])) - ((v2[1] - v0[1]) * (v1[2] - v0[2]));
+	float x = 0.5f * ((v1[0] - v0[0]) * (v2[1] - v0[1]) - (v2[0] - v0[0]) * (v1[1] - v0[1]));
+	float y = 0.5f * ((v1[2] - v0[2]) * (v2[0] - v0[0]) - (v2[2] - v0[2]) * (v1[0] - v0[0]));
+	float z = 0.5f * ((v1[1] - v0[1]) * (v2[2] - v0[2]) - (v2[1] - v0[1]) * (v1[2] - v0[2]));
 
 	float a = sqrtf((x * x) + (y * y) + (z * z));
 
@@ -167,9 +153,9 @@ float Polygon_TriangleArea(float v0[3], float v1[3], float v2[3])
 vec3 Polygon_TriangleProjectedAreas(float v0[3], float v1[3], float v2[3])
 {
 	// projected areas on the x, y and z axis
-	float x = ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
-	float y = ((v1[2] - v0[2]) * (v2[0] - v0[0])) - ((v2[2] - v0[2]) * (v1[0] - v0[0]));
-	float z = ((v1[1] - v0[1]) * (v2[2] - v0[2])) - ((v2[1] - v0[1]) * (v1[2] - v0[2]));
+	float x = 0.5f * ((v1[0] - v0[0]) * (v2[1] - v0[1]) - (v2[0] - v0[0]) * (v1[1] - v0[1]));
+	float y = 0.5f * ((v1[2] - v0[2]) * (v2[0] - v0[0]) - (v2[2] - v0[2]) * (v1[0] - v0[0]));
+	float z = 0.5f * ((v1[1] - v0[1]) * (v2[2] - v0[2]) - (v2[1] - v0[1]) * (v1[2] - v0[2]));
 
 	return vec3(x, y, z);
 }
@@ -180,11 +166,13 @@ static float Polygon_ProjectedArea(polygon_t *p, int axis)
 
 	for(int i = 0; i < p->numvertices - 2; i++)
 	{
-		a += Polygon_TriangleProjectedArea(axis, p->vertices[i], p->vertices[i + 1], p->vertices[i + 2]);
+		a += Polygon_TriangleProjectedArea(axis, p->vertices[0], p->vertices[i + 1], p->vertices[i + 2]);
 	}
 
 	return a;
 }
+
+#include <stdio.h>
 
 float Polygon_Area(polygon_t* p)
 {
@@ -193,12 +181,14 @@ float Polygon_Area(polygon_t* p)
 	float y = Polygon_ProjectedArea(p, 1);
 	float z = Polygon_ProjectedArea(p, 2);
 
+	printf("x: %f, y: %f, z: %f\n", x, y, z);
+
 	float a = sqrtf((x * x) + (y * y) + (z * z));
 
 	return a;
 }
 
-static vec3 Polygon_Normal2(polygon_t *p)
+vec3 Polygon_Normal2(polygon_t *p)
 {
 	// projected areas on the x, y and z axis
 	float x = Polygon_ProjectedArea(p, 0);
