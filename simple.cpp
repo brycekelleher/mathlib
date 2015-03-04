@@ -58,7 +58,11 @@ static void Matrix_Multiply(float* r, float* a, float* b)
 			r[i * 4 + j] = 0;
 			for( k = 0; k < 4; k++)
 			{
-				r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
+				r[i * 4 + j] =
+					a[i * 4 + 0] * b[0 * 4 + j]
+					a[i * 4 + 1] * b[1 * 4 + j]
+					a[i * 4 + 2] * b[2 * 4 + j]
+					a[i * 4 + 3] * b[3 * 4 + j];
 			}
 		}
 	}
