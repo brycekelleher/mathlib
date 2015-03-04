@@ -208,6 +208,8 @@ inline vec2 Skew(vec2 a)
 	return vec2(-a.y, a.x);
 }
 
+static vec2 vec2_zero = vec2(0.0f, 0.0f);
+
 /*-----------------------------------------------------------------------------
 	vec3
 -----------------------------------------------------------------------------*/
@@ -410,6 +412,8 @@ inline vec3 Normalize(vec3 v)
 	v.Normalize();
 	return v;
 }
+
+static vec3 vec3_zero = vec3(0.0f, 0.0f, 0.0f);
 
 /*-----------------------------------------------------------------------------
 	vec4
@@ -615,6 +619,8 @@ inline vec4 Normalize(vec4 v)
 	v.Normalize();
 	return v;
 }
+
+static vec4 vec4_zero(0.0f, 0.0f, 0.0f);
 
 #endif
 

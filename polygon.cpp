@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <stdlib.h>
+#include <memory.h>
 #include "vector.h"
 
 
@@ -11,34 +13,62 @@ typedef struct polygon_s
 } polygon_t;
 
 #define POLYGON_SIDE_ON		0
-#define POLYGON_SIZE_FRONT	1
+#define POLYGON_SIDE_FRONT	1
 #define POLYGON_SIDE_BACK	2
+#define POLYGON_SIDE_CROSS	3
+
+// memory allocation
+static void *Polygon_MemAllocHandler(int numbytes)
+{
+	return malloc(numbytes);
+}
+
+static void Polygon_MemFreeHandler(void *ptr)
+{
+	free(ptr);
+}
+
+static void *(*Polygon_MemAlloc)(int numbytes)	= Polygon_MemAllocHandler;
+static void (*Polygon_MemFree)(void *p)		= Polygon_MemFreeHandler;
+
+void Polygon_SetMemCallbacks(void *(*alloccallback)(int numbytes), void (*freecallback)(void *p))
+{
+	Polygon_MemAlloc	= alloccallback;
+	Polygon_MemFree		= freecallback;
+}
 
 int Polygon_MemSize(int maxvertices)
 {
-	return sizeof(polygon_t) + (maxvertices * vec3);
+	return sizeof(polygon_t) + (maxvertices * sizeof(vec3));
 }
 
-polygon_t Polygon_Alloc(int maxvertices)
+polygon_t *Polygon_Alloc(int maxvertices)
 {
-	unsigned char *
+	polygon_t	*p;
 
-	p = malloc(sizeof(polygon_t) + (maxvertices * vec3));
+	int numbytes = Polygon_MemSize(maxvertices);
+	p = (polygon_t*)Polygon_MemAlloc(numbytes);
 
-	p-maxvertices	= maxvertices;
+	p->maxvertices	= maxvertices;
 	p->numvertices	= 0;
-	p->vertices	= mem + sizeof(polygon_t);
+	p->vertices	= (vec3*)(p + 1);
+
+	return p;
 }
 
 void Polygon_Free(polygon_t* p)
 {
-	delete p;
+	Polygon_MemFree(p);
 }
 
 polygon_t* Polygon_Copy(polygon_t* p)
 {
-	polygon_t* c = Polygon_Alloc();
-	memcpy(c, p, sizeof(polygon_t));
+	polygon_t	*c;
+
+	int numbytes = Polygon_MemSize(p->maxvertices);
+	c = (polygon_t*)Polygon_MemAlloc(numbytes);
+
+	memcpy(c, p, numbytes);
 
 	return c;
 }
@@ -53,7 +83,7 @@ vec3 Polygon_Normal(polygon_t* p)
 	e1 = p->vertices[2] - p->vertices[1];
 	
 	assert(e0.Length() > 0.0f && e1.Length() > 0.0f);
-	n = e0.Cross(e1);
+	n = Cross(e0, e1);
 	n.Normalize();
 
 	return n;
@@ -62,20 +92,20 @@ vec3 Polygon_Normal(polygon_t* p)
 vec3 Polygon_Centroid(polygon_t* p)
 {
 	vec3 v;
-
-	v.Zero();
+	
+	v = vec3_zero;
 	for(int i = 0; i < p->numvertices; i++)
-		v+= p->vertices[i];
+		v = v + p->vertices[i];
 
-	v *= 1.0f / (float)p->numvertices;
+	v = (1.0f / (float)p->numvertices) * v;
 
 	return v;
 }
 
-void Polygon_BoundingBox(polygon_t* p, vec3* pvMin, vec3* pvMax)
+void Polygon_BoundingBox(polygon_t* p, vec3* bmin, vec3* bmax)
 {
-	*min = vec3( 1e20f,  1e20f,  1e20f);
-	*max = vec3(-1e20f, -1e20f, -1e20f);
+	*bmin = vec3( 1e20f,  1e20f,  1e20f);
+	*bmax = vec3(-1e20f, -1e20f, -1e20f);
 
 	for(int i = 0; i < p->numvertices; i++)
 	{
@@ -83,55 +113,65 @@ void Polygon_BoundingBox(polygon_t* p, vec3* pvMin, vec3* pvMax)
 
 		for(int j = 0; j < 3; j++)
 		{
-			if(v[j] < min[j])
-				min[j] = v[j];
-			if(v[j] > max[j])
-				max[j] = v[j];
+			if(v[j] < bmin[j])
+				bmin[j] = v[j];
+			if(v[j] > bmax[j])
+				bmax[j] = v[j];
 		}
 	}
 }
 
-float TriangleArea2D(float v0[2], float v1[2], float v2[2])
+float Polygon_TriangleArea2D(float v[3][2])
 {
-	0.5f * ((v[1][0] - v[0][0]) * (v[2][1] - v[0][1])) - ((v[2][0] - v[0][0]) * (v[1][1] - v[0][1]));
+	return 0.5f * ((v[1][0] - v[0][0]) * (v[2][1] - v[0][1])) - ((v[2][0] - v[0][0]) * (v[1][1] - v[0][1]));
 }
 
-float TriangleArea2D(float v0[2], float v1[2], float v2[2])
+float Polygon_TriangleArea2D(float v0[2], float v1[2], float v2[2])
 {
-	0.5f * ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
+	return 0.5f * ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
 }
 
-static float TriangleProjectedArea(int axis, float v0[3], float v1[3], float v2[3])
+static float Polygon_TriangleProjectedArea(int axis, float v0[3], float v1[3], float v2[3])
 {
 	float v[3][2];
 
-	static int axistable[] =
+	static int axistable[3][2] =
 	{
 		{ 1, 2 },
 		{ 2, 0 },
 		{ 0, 1 }
 	};
 
-	v[0][0] = p->vertex[i][axis[0]];
-	v[0][1] = p->vertex[i][axis[1]];
-	v[1][0] = p->vertex[j][axis[0]];
-	v[1][1] = p->vertex[j][axis[1]];
-	v[2][0] = p->vertex[k][axis[0]];
-	v[2][1] = p->vertex[k][axis[1]];
+	v[0][0] = v0[axistable[axis][0]];
+	v[0][1] = v0[axistable[axis][1]];
+	v[1][0] = v1[axistable[axis][0]];
+	v[1][1] = v1[axistable[axis][1]];
+	v[2][0] = v2[axistable[axis][0]];
+	v[2][1] = v2[axistable[axis][1]];
 
-	return TriangleArea2D(v[0], v[1], v[2]);
+	return Polygon_TriangleArea2D(v[0], v[1], v[2]);
 }
 
-float TriangleArea(float v0[2], float v1[3], float v2[3])
+float Polygon_TriangleArea(float v0[3], float v1[3], float v2[3])
 {
 	// projected areas on the x, y and z axis
-	float x = ((v[1][0] - v[0][0]) * (v[2][1] - v[0][1])) - ((v[2][0] - v[0][0]) * (v[1][1] - v[0][1]));
-	float y = ((v[1][2] - v[0][2]) * (v[2][0] - v[0][0])) - ((v[2][2] - v[0][2]) * (v[1][0] - v[0][0]));
-	float z = ((v[1][1] - v[0][1]) * (v[2][2] - v[0][2])) - ((v[2][1] - v[0][1]) * (v[1][2] - v[0][2]));
+	float x = ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
+	float y = ((v1[2] - v0[2]) * (v2[0] - v0[0])) - ((v2[2] - v0[2]) * (v1[0] - v0[0]));
+	float z = ((v1[1] - v0[1]) * (v2[2] - v0[2])) - ((v2[1] - v0[1]) * (v1[2] - v0[2]));
 
-	float a = sqrtf((a * a) + (b * b) + (c * c));
+	float a = sqrtf((x * x) + (y * y) + (z * z));
 
 	return a;
+}
+
+vec3 Polygon_TriangleProjectedAreas(float v0[3], float v1[3], float v2[3])
+{
+	// projected areas on the x, y and z axis
+	float x = ((v1[0] - v0[0]) * (v2[1] - v0[1])) - ((v2[0] - v0[0]) * (v1[1] - v0[1]));
+	float y = ((v1[2] - v0[2]) * (v2[0] - v0[0])) - ((v2[2] - v0[2]) * (v1[0] - v0[0]));
+	float z = ((v1[1] - v0[1]) * (v2[2] - v0[2])) - ((v2[1] - v0[1]) * (v1[2] - v0[2]));
+
+	return vec3(x, y, z);
 }
 
 static float Polygon_ProjectedArea(polygon_t *p, int axis)
@@ -140,7 +180,7 @@ static float Polygon_ProjectedArea(polygon_t *p, int axis)
 
 	for(int i = 0; i < p->numvertices - 2; i++)
 	{
-		a += Polygon_ProjectedTriangleArea(axis, p->vertices[i], p->vertices[i + 1], p->vertices[i + 2]);
+		a += Polygon_TriangleProjectedArea(axis, p->vertices[i], p->vertices[i + 1], p->vertices[i + 2]);
 	}
 
 	return a;
@@ -149,27 +189,29 @@ static float Polygon_ProjectedArea(polygon_t *p, int axis)
 float Polygon_Area(polygon_t* p)
 {
 	// projected areas on the x, y and z axis
-	float x = Polygon_ProjectedArea();
-	float y = Polygon_ProjectedArea();
-	float z = Polygon_ProjectedArea();
+	float x = Polygon_ProjectedArea(p, 0);
+	float y = Polygon_ProjectedArea(p, 1);
+	float z = Polygon_ProjectedArea(p, 2);
 
-	float a = sqrtf((a * a) + (b * b) + (c * c));
+	float a = sqrtf((x * x) + (y * y) + (z * z));
 
 	return a;
 }
 
-static vec3_t Polygon_Normal()
+static vec3 Polygon_Normal2(polygon_t *p)
 {
 	// projected areas on the x, y and z axis
-	float x = Polygon_ProjectedArea();
-	float y = Polygon_ProjectedArea();
-	float z = Polygon_ProjectedArea();
+	float x = Polygon_ProjectedArea(p, 0);
+	float y = Polygon_ProjectedArea(p, 1);
+	float z = Polygon_ProjectedArea(p, 2);
 
-	float a = sqrtf((a * a) + (b * b) + (c * c));
+	vec3 n = vec3(x, y, z);
+	n = Normalize(n);
 
-	return a;
+	return n;
 }
 
+#if 0
 bool Polygon_IsConvex()
 {
 	int i = -1;
@@ -180,7 +222,7 @@ bool Polygon_IsConvex()
 	j = k;
 	k++;
 
-	int signs[2];
+	int signs[2] = { 0 };
 
 	for(int i = 0; i < p->numvertices; i++)
 	{
@@ -191,58 +233,61 @@ bool Polygon_IsConvex()
 
 	return (signs[0] && !signs[1]) || (!signs[0] && signs[1]);
 }
+#endif
 
-float Polygon_ProjectedArea(int axis0, int axis1)
+float Polygon_ProjectedArea(polygon_t *p, int axis0, int axis1)
 {
 	int axis[2];
 
 	int numtriangles = p->numvertices - 2;
-	for(int i = 0; i < numtriangles; - 2; i++)
+	for(int i = 0; i < numtriangles - 2; i++)
 	{
 		float v[3][2];
 
-		v[0][0] = p->vertex[0][axis[0]];
-		v[0][1] = p->vertex[0][axis[1]];
-		v[1][0] = p->vertex[i + 0][axis[0]];
-		v[1][1] = p->vertex[i + 0][axis[1]];
-		v[2][0] = p->vertex[i + 1][axis[0]];
-		v[2][1] = p->vertex[i + 1][axis[1]];
+		v[0][0] = p->vertices[0][axis[0]];
+		v[0][1] = p->vertices[0][axis[1]];
+		v[1][0] = p->vertices[i + 0][axis[0]];
+		v[1][1] = p->vertices[i + 0][axis[1]];
+		v[2][0] = p->vertices[i + 1][axis[0]];
+		v[2][1] = p->vertices[i + 1][axis[1]];
 
 		// Compute the 3x3 determinant
 
 		//Polygon(
 	
 	}
+
+	return 0;
 }
 
-
+#if 0
 // Compute the plane the polygon is on
 // fixme: d should be negative
-void Polygon_Plane(polygon_t* p, vec3* n, float* d)
+void Polygon_PlaneDistance(polygon_t* p, vec3 n, float d)
 {
-	*n = Polygon_Normal(p);
-	*d = n->Dot(p->vertices[0]);
+	n = Polygon_Normal(p);
+	d = Dot(n, p->vertices[0]);
 }
+#endif
 
-static polygon_t temp;
-
-// This should work?
-void Polygon_ReverseWinding(polygon_t* p)
+polygon_t *Polygon_Reverse(polygon_t* p)
 {
-	memcpy(&temp, p, sizeof(polygon_t));
+	polygon_t	*r;
+
+	r = (polygon_t*)Polygon_Alloc(p->maxvertices);
 
 	for(int i = 0; i < p->numvertices; i++)
-		temp.vertices[i] = p->vertices[p->numvertices - i - 1];
-	
-	memcpy(p, &temp, sizeof(polygon_t));
+		r->vertices[(i + i) % p->numvertices] = p->vertices[p->numvertices - 1 - i];
+
+	return r;
 }
 
+#if 0
 static float Polygon_VecDot(vec3 a, vec3 b)
 {
 	return (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]);
 }
 
-#if 0
 static float Polygon_PlaneDist(plane_t plane, vec3 point)
 {
 	return (plane.a  * point.x) + (plane.b * point.y) + (plane.c * point.z) + plane.d;
@@ -252,8 +297,8 @@ static float Polygon_PlaneDist(plane_t plane, vec3 point)
 
 void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilon, polygon_t **front, polygon_t **back)
 {
-	float	dists[MAX_POLYGONVERTICES+4];
-	int		sides[MAX_POLYGONVERTICES+4];
+	float	dists[32+4];
+	int		sides[32+4];
 	int		counts[3];		// FRONT, BACK, ON
 	static	float dot;		// VC 4.2 optimizer bug if not static
 	int		i, j;
@@ -266,7 +311,7 @@ void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilo
 
 	// classify each point
 	{
-		for(i = 0; i < in->count; i++)
+		for(i = 0; i < in->numvertices; i++)
 		{
 			dists[i] = Dot(in->vertices[i], normal) + dist;
 			
@@ -292,7 +337,7 @@ void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilo
 	
 	// all points are on the plane
 	// fixme: what happens if the polygon is degenerate?
-	if(!counts[FRONT] && !counts[BACK])
+	if(!counts[POLYGON_SIDE_FRONT] && !counts[POLYGON_SIDE_BACK])
 	{
 		*front = NULL;
 		*back = NULL;
@@ -300,7 +345,7 @@ void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilo
 	}
 
 	// all points are front side
-	if(!counts[BACK])
+	if(!counts[POLYGON_SIDE_BACK])
 	{
 		*front = Polygon_Copy(in);
 		*back = NULL;
@@ -308,7 +353,7 @@ void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilo
 	}
 
 	// all points are back side
-	if (!counts[FRONT])
+	if(!counts[POLYGON_SIDE_FRONT])
 	{
 		*front = NULL;
 		*back = Polygon_Copy(in);
@@ -319,8 +364,8 @@ void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilo
 	maxpts = in->numvertices+4;	// cant use counts[0]+2 because
 								// of fp grouping errors
 
-	*front = f = Polygon_Alloc();
-	*back = b = Polygon_Alloc();
+	*front = f = Polygon_Alloc(maxpts);
+	*back = b = Polygon_Alloc(maxpts);
 		
 	for(i = 0; i < in->numvertices; i++)
 	{
@@ -391,7 +436,7 @@ void Polygon_ClipWithPlane (polygon_t *in, vec3 normal, float dist, float epsilo
 		//Error ("ClipWinding: points exceeded estimate");
 	}
 
-	if (f->numvertices > MAX_POLYGONVERTICES || b->numvertices > MAX_POLYGONVERTICES)
+	if (f->numvertices > 32 || b->numvertices > 32)
 	{
 		assert(0);
 		//Error ("ClipWinding: MAX_POINTS_ON_WINDING");
@@ -535,20 +580,18 @@ void PolygonClipWithPlane (polygon_t** inout, vec3 normal, float dist, float eps
 }
 #endif
 
-void PolygonClipWithPlane(polygon_t** inout, vec3 normal, float dist, float epsilon)
+void Polygon_ClipWithPlane(polygon_t** inout, vec3 normal, float dist, float epsilon)
 {
 	polygon_t* f;
 	polygon_t* b;
 
-	PolygonClipWithPlane(*inout, normal, dist, epsilon, &f, &b);
+	Polygon_ClipWithPlane(*inout, normal, dist, epsilon, &f, &b);
 
 	if(b)
 		Polygon_Free(b);
 
 	// fixme: copying of vertices will break if the polygon allocation
 	// is changed to support variable amounts of verts
-	// fixme: next pointers on the polygon break, should there even be
-	// a next pointer?
 	*inout = f;
 }
 
@@ -564,7 +607,7 @@ int	PolygonOnPlaneSide(polygon_t *p, vec3 normal, float dist, float epsilon)
 
 	for(i = 0; i < p->numvertices; i++)
 	{
-		d = p->vertices[i].Dot(normal) - dist;
+		d = Dot(p->vertices[i], normal) - dist;
 		
 		if(d < -epsilon)
 		{
@@ -591,6 +634,7 @@ int	PolygonOnPlaneSide(polygon_t *p, vec3 normal, float dist, float epsilon)
 	return POLYGON_SIDE_ON;
 }
 
+#if 0
 // Generate a polygon from a plane
 polygon_t *PolygonFromPlane(vec3& normal, float dist, float size)
 {
@@ -677,46 +721,5 @@ void FindCoIncidentVertices(polygon_t* p)
 	}
 }
 
-void PolygonListBounds(bsp_polygon_t* poly, vec3* pmin, vec3* pmax)
-{
-	int i, j;
-	vec3 v, min, max;
+#endif
 
-	min.Set(4096.0f, 4096.0f, 4096.0f);
-	max = -min;
-
-	while(poly)
-	{
-		for(i = 0; i < poly->m_poly->numvertices; i++)
-		{
-			v = poly->m_poly->vertices[i];
-			for(j = 0; j < 3; j++)
-			{
-				if(v[j] < min[j])
-					min[j] = v[j];
-				if(v[j] > max[j])
-					max[j] = v[j];
-			}
-		}
-
-		poly = poly->m_next;
-	}
-
-	*pmin = min;
-	*pmax = max;
-}
-
-// Move this somewhere else
-//
-
-leaf_polygon_t* g_pLeafPolygons = 0;
-
-leaf_polygon_t* Leaf_Alloc()
-{
-	leaf_polygon_t* lp = (leaf_polygon_t*)malloc(sizeof(leaf_polygon_t));
-	return lp;
-}
-void Leaf_Free(leaf_polygon_t* lp)
-{
-	free(lp);
-}
