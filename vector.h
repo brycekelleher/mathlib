@@ -192,6 +192,16 @@ inline bool operator!=(const vec2 a, const vec2 b)
 	return (a.x != b.x) || (a.y != b.y);
 }
 
+inline float Length(vec2 v)
+{
+	return v.Length();
+}
+
+inline float LengthSquared(vec2 v)
+{
+	return v.LengthSquared();
+}
+
 inline float Dot(const vec2 a, const vec2 b)
 {
 	return (a.x * b.x) + (a.y * b.y);
@@ -395,6 +405,16 @@ inline bool operator==(const vec3 a, const vec3 b)
 inline bool operator!=(const vec3 a, const vec3 b)
 {
 	return (a.x != b.x) || (a.y != b.y) || (a.z != b.z);
+}
+
+inline float Length(vec3 v)
+{
+	return v.Length();
+}
+
+inline float LengthSquared(vec3 v)
+{
+	return v.LengthSquared();
 }
 
 inline float Dot(const vec3 a, const vec3 b)
@@ -607,6 +627,16 @@ inline bool operator==(const vec4 a, const vec4 b)
 inline bool operator!=(const vec4 a, const vec4 b)
 {
 	return (a.x != b.x) || (a.y != b.y) || (a.z != b.z) || (a.w != b.w);
+}
+
+inline float Length(vec4 v)
+{
+	return v.Length();
+}
+
+inline float LengthSquared(vec4 v)
+{
+	return v.LengthSquared();
 }
 
 inline float Dot(const vec4 a, const vec4 b)
